@@ -1,11 +1,13 @@
 """This module is responsible for creating vector embeddings"""
 
 import logging
+import os
 from langchain_ollama import OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
 
 logger = logging.getLogger(__name__)
 
+PERSIST_DIRECTORY = os.path.join("data", "vectors")
 
 class VectorStore:
     """Manages vector embeddings in the ChromaDB"""
@@ -20,7 +22,8 @@ class VectorStore:
             self.vectordb = Chroma.from_documents(
                 documents=documents,
                 embedding=self.embeddings,
-                collection_name=collection_name
+                collection_name=collection_name,
+                persist_directory=PERSIST_DIRECTORY,
             )
 
             return self.vectordb
