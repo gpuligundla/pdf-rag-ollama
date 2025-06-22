@@ -82,7 +82,7 @@ def create_vector_db(file_upload, parser, vector_store):
 def process_query(question, rag_pipeline):
     """Invoke the Rag pipeline and answer the user query"""
 
-    response = rag_pipeline.invoke(question)
+    response = rag_pipeline.get_response(question)
     logger.info("Question processed and response generated")
     return response
 
@@ -152,7 +152,7 @@ def main():
         st.session_state["use_sample"] = use_sample
 
     if use_sample:
-        sample_file_path = "sample/bigData.pdf"
+        sample_file_path = "../sample/bigData.pdf"
         if os.path.exists(sample_file_path):
             if st.session_state["vector_db"] is None:
                 with st.spinner("processing the PDF..."):
@@ -165,7 +165,7 @@ def main():
                     # Open and display the sample PDF
                     with pdfplumber.open(sample_file_path) as pdf:
                         st.session_state["pdf_pages"] = [
-                            page.to_image().original for page in pdf.pages
+                            page.to_image(resolution=300).original for page in pdf.pages
                         ]
         else:
             st.error(f"Sample PDF not found at: {sample_file_path}")
@@ -188,76 +188,92 @@ def main():
 
                     with pdfplumber.open(file_upload) as pdf:
                         st.session_state["pdf_pages"] = [
-                            page.to_image().original
-                            for page in pdf.pages
+                            page.to_image(resolution=300).original for page in pdf.pages
                         ]
 
-        # display pdf pages
-        if st.session_state.get("pdf_pages"):
-            zoom_level = col1.slider(
-                "Zoom level",
-                min_value=100,
-                max_value=1000,
-                value=700,
-                step=50,
-                key="zoom_slider",
+    # display pdf pages
+    if st.session_state.get("pdf_pages"):
+        zoom_level = col1.slider(
+            "Zoom level",
+            min_value=100,
+            max_value=1000,
+            value=600,
+            step=50,
+            key="zoom_slider",
+        )
+        
+        # Add page selector for better navigation
+        if len(st.session_state["pdf_pages"]) > 1:
+            page_num = col1.selectbox(
+                "Select page",
+                range(1, len(st.session_state["pdf_pages"]) + 1),
+                key="page_selector"
+            )
+            selected_page = page_num - 1
+        else:
+            selected_page = 0
+
+        with col1:
+            with st.container(height=410, border=True):
+                if st.session_state["pdf_pages"]:
+                    page_image = st.session_state["pdf_pages"][selected_page]
+                    st.image(
+                        page_image,
+                        width=zoom_level,
+                        caption=f"Page {selected_page + 1} of {len(st.session_state['pdf_pages'])}",
+                        use_column_width=False
+                    )
+
+    # delete collection button
+    delete_collection = col1.button(
+        "⚠️ Delete collection", type="secondary", key="delete_button"
+    )
+
+    if delete_collection:
+        delete_vector_db(vector_db=st.session_state["vector_db"])
+
+    # chat interface:
+    with col2:
+        if st.session_state["vector_db"] is not None:
+            # Use the selected model instead of default
+            llm_manager = LLMManager(model=selected_model)
+            rag_pipeline = RAGPipeline(
+                vector_db=st.session_state["vector_db"], llm_manager=llm_manager
+            )
+        else:
+            st.info(
+                "Please upload a PDF file or select the sample PDF to start chatting."
             )
 
-            with col1:
-                with st.container(height=410, border=True):
-                    for page_image in st.session_state["pdf_pages"]:
-                        st.image(page_image, width=zoom_level)
+        message_container = st.container(height=500, border=True)
 
-        # delete collection button
-        delete_collection = col1.button(
-            "⚠️ Delete collection", type="secondary", key="delete_button"
-        )
+        # display history messages
+        for message in st.session_state["messages"]:
+            avatar = "🤖" if message["role"] == "assistant" else "😎"
+            with message_container.chat_message(message["role"], avatar=avatar):
+                st.markdown(message["content"])
 
-        if delete_collection:
-            delete_vector_db(vector_db=st.session_state["vector_db"])
-
-        # chat interface:
-        with col2:
-            if st.session_state["vector_db"] is not None:
-                # Use the selected model instead of default
-                llm_manager = LLMManager(model=selected_model)
-                rag_pipeline = RAGPipeline(
-                    vector_db=st.session_state["vector_db"], llm_manager=llm_manager
+        # chat input and processing
+        prompt = st.chat_input("Enter a prompt here...", key="chat_input")
+        if prompt:
+            try:
+                st.session_state["messages"].append(
+                    {"role": "user", "content": prompt}
                 )
-            else:
-                st.info(
-                    "Please upload a PDF file or select the sample PDF to start chatting."
-                )
+                with message_container.chat_message("user", avatar="😎"):
+                    st.markdown(prompt)
 
-            message_container = st.container(height=500, border=True)
-
-            # display history messages
-            for message in st.session_state["messages"]:
-                avatar = "🤖" if message["role"] == "assistant" else "😎"
-                with message_container.chat_message(message["role"], avatar=avatar):
-                    st.markdown(message["content"])
-
-            # chat input and processing
-            prompt = st.chat_input("Enter a prompt here...", key="chat_input")
-            if prompt:
-                try:
-                    st.session_state["messages"].append(
-                        {"role": "user", "content": prompt}
-                    )
-                    with message_container.chat_message("user", avatar="😎"):
-                        st.markdown(prompt)
-
-                    # ask the LLM and retreive the response
-                    with message_container.chat_message("assistant", avatar="🤖"):
-                        with st.spinner(":green[processing...]"):
-                            if st.session_state["vector_db"] is not None:
-                                response = process_query(prompt, rag_pipeline)
-                                st.markdown(response)
-                            else:
-                                st.warning("Please upload the PDF file first")
-                except Exception as e:
-                    st.error(e, icon="⛔️")
-                    logger.error(f"Error processing prompt: {e}")
+                # ask the LLM and retreive the response
+                with message_container.chat_message("assistant", avatar="🤖"):
+                    with st.spinner(":green[processing...]"):
+                        if st.session_state["vector_db"] is not None:
+                            response = process_query(prompt, rag_pipeline)
+                            st.markdown(response)
+                        else:
+                            st.warning("Please upload the PDF file first")
+            except Exception as e:
+                st.error(e, icon="⛔️")
+                logger.error(f"Error processing prompt: {e}")
 
 
 if __name__ == "__main__":
