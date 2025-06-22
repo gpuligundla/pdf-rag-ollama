@@ -13,10 +13,9 @@ import warnings
 
 from rag.DocumentParser import DocumentParser
 from rag.VectorStore import VectorStore
-from rag.LLMManager import LLMManger
+from rag.LLMManager import LLMManager
 from rag.RAGPipeline import RAGPipeline
 
-warnings.filters("ignore", category=UserWarning, message=".*torch.classes.*")
 
 # Logging configuration
 logging.basicConfig(
@@ -150,7 +149,7 @@ def main():
             st.session_state["vector_db"].delete_collection()
             st.session_state["vector_db"] = None
             st.session_state["pdf_pages"] = None
-        st.session_state["use_sampe"] = use_sample
+        st.session_state["use_sample"] = use_sample
 
     if use_sample:
         sample_file_path = "sample/bigData.pdf"
@@ -168,6 +167,8 @@ def main():
                         st.session_state["pdf_pages"] = [
                             page.to_image().original for page in pdf.pages
                         ]
+        else:
+            st.error(f"Sample PDF not found at: {sample_file_path}")
     else:
         file_upload = col1.file_uploader(
             "Upload a PDF file",
@@ -180,14 +181,15 @@ def main():
             if st.session_state["vector_db"] is None:
                 with st.spinner("Processing uploaded PDF..."):
                     st.session_state["vector_db"] = create_vector_db(
-                        file_upload, vector_store, parser
+                        file_upload, parser, vector_store
                     )
 
                     st.session_state["file_upload"] = file_upload
 
                     with pdfplumber.open(file_upload) as pdf:
                         st.session_state["pdf_pages"] = [
-                            page.to_image() for page in pdf.pages
+                            page.to_image().original
+                            for page in pdf.pages
                         ]
 
         # display pdf pages
@@ -216,10 +218,16 @@ def main():
 
         # chat interface:
         with col2:
-            llm_manager = LLMManger()
-            rag_pipeline = RAGPipeline(
-                vector_db=st.session_state["vector_db"], llm_manager=llm_manager
-            )
+            if st.session_state["vector_db"] is not None:
+                # Use the selected model instead of default
+                llm_manager = LLMManager(model=selected_model)
+                rag_pipeline = RAGPipeline(
+                    vector_db=st.session_state["vector_db"], llm_manager=llm_manager
+                )
+            else:
+                st.info(
+                    "Please upload a PDF file or select the sample PDF to start chatting."
+                )
 
             message_container = st.container(height=500, border=True)
 
@@ -250,11 +258,6 @@ def main():
                 except Exception as e:
                     st.error(e, icon="⛔️")
                     logger.error(f"Error processing prompt: {e}")
-            else:
-                if st.session_state["vector_db"] is None:
-                    st.warning(
-                        "Upload a PDF file or use the sample PDF to begin chat..."
-                    )
 
 
 if __name__ == "__main__":

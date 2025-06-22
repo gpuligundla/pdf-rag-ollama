@@ -7,7 +7,7 @@ from langchain.prompts import ChatPromptTemplate, PromptTemplate
 
 logger = logging.getLogger(__name__)
 
-class LLMManger:
+class LLMManager:
     """Manages LLM configuration and prompts."""
     def __init__(self, model="llama3.2:3b"):
         self.model = model
