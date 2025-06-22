@@ -1,6 +1,6 @@
 # PDF RAG with Ollama
 
-A Streamlit-based application that allows you to chat with PDF documents using Retrieval-Augmented Generation (RAG) powered by Ollama local language models.
+A Streamlit-based application that allows you to chat with PDF documents using Retrieval-Augmented Generation (RAG) powered by Langchain and Ollama local language models.
 
 ## Screenshot
 
